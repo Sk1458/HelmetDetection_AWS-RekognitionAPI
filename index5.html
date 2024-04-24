@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helmet Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #333;
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #detectionStatus {
+            font-size: 18px;
+        }
+
+        #videoContainer {
+            position: relative;
+            width: 640px; /* Set the width of the video container */
+        }
+
+        #boundingBox {
+            position: absolute;
+            border: 2px solid lime;
+            box-sizing: border-box;
+            display: none; /* Initially hide the bounding box */
+        }
+    </style>
+</head>
+<body>
+    <h1>Helmet Detection</h1>
+    <button id="startButton">Start Detection</button>
+    <button id="stopButton">Stop Detection</button>
+    <div id="detectionStatus"></div>
+    <div id="videoContainer"></div>
+
+    <script>
+        var cameraStarted = false; // Flag to track if camera is already started
+        var videoStream = null; // Variable to store the video stream
+        var detectionInterval; // Interval for helmet detection
+
+        // Function to start camera and helmet detection
+        function startDetection() {
+            if (!cameraStarted) { // Check if camera is not already started
+                // Access the user's camera
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function(stream) {
+                        // Get the video element
+                        var video = document.createElement('video');
+                        video.setAttribute('autoplay', '');
+                        video.setAttribute('playsinline', '');
+                        video.srcObject = stream;
+                        document.getElementById('videoContainer').appendChild(video);
+                        videoStream = stream; // Store the video stream
+                        cameraStarted = true; // Set cameraStarted flag to true
+
+                        // Start helmet detection
+                        detectionInterval = setInterval(detectHelmet, 1000); // Start detection interval
+                    })
+                    .catch(function(error) {
+                        console.error('Error accessing the camera:', error);
+                    });
+            }
+        }
+
+        // Function to stop camera and helmet detection
+        function stopDetection() {
+            if (cameraStarted && videoStream) { // Check if camera is started and video stream exists
+                // Stop the video stream
+                videoStream.getTracks().forEach(function(track) {
+                    track.stop();
+                });
+                // Remove the video element
+                var video = document.querySelector('video');
+                if (video) {
+                    video.parentNode.removeChild(video);
+                }
+                clearInterval(detectionInterval); // Stop detection interval
+                cameraStarted = false; // Reset cameraStarted flag to false
+            }
+        }
+
+        // Function to detect helmet
+        function detectHelmet() {
+            var video = document.querySelector('video');
+
+            // Check if video element exists and is playing
+            if (video && !video.paused && !video.ended && video.readyState > 2) {
+                // Initialize canvas for capturing frames
+                var canvas = document.createElement('canvas');
+                var context = canvas.getContext('2d');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                // Draw video frame onto the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                var imageData = canvas.toDataURL('image/jpeg');
+
+                // Send image data to backend for helmet detection
+                fetch('http://localhost:5000/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image: imageData })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Update detection status on the webpage
+                    var detectionStatus = document.getElementById('detectionStatus');
+                    if (data && data.helmetDetected) {
+                        detectionStatus.textContent = 'Helmet Detected';
+                        // Draw bounding box around the detected helmet region
+                        var boundingBox = document.getElementById('boundingBox');
+                        if (boundingBox) {
+                            boundingBox.style.display = 'block';
+                            boundingBox.style.left = data.boundingBox.left + 'px';
+                            boundingBox.style.top = data.boundingBox.top + 'px';
+                            boundingBox.style.width = data.boundingBox.width + 'px';
+                            boundingBox.style.height = data.boundingBox.height + 'px';
+                        }
+                    } else {
+                        detectionStatus.textContent = 'Helmet Not Detected';
+                        // Hide bounding box if helmet is not detected
+                        var boundingBox = document.getElementById('boundingBox');
+                        if (boundingBox) {
+                            boundingBox.style.display = 'none';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error detecting helmet:', error);
+                });
+            }
+        }
+
+        // Event listener for start button click
+        document.getElementById('startButton').addEventListener('click', startDetection);
+
+        // Event listener for stop button click
+        document.getElementById('stopButton').addEventListener('click', stopDetection);
+    </script>
+</body>
+</html>
